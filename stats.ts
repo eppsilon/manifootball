@@ -36,10 +36,10 @@ export interface Game {
   notes: string | null;
 }
 
-export async function getGames({ apiUrl, apiKey }: { apiUrl: string; apiKey: string }): Promise<Game[]> {
+export async function getGames({ apiUrl, apiKey }: { apiUrl: string; apiKey: string }, week: number): Promise<Game[]> {
   const url = new URL(`${apiUrl}/games`);
   url.searchParams.set('year', '2023');
-  url.searchParams.set('week', '8');
+  url.searchParams.set('week', '' + week);
   url.searchParams.set('seasonType', 'regular');
   url.searchParams.set('division', 'fbs');
 
@@ -67,16 +67,19 @@ interface Polls {
   polls: Poll[];
 }
 
-export async function getApPollRanks({
-  apiUrl,
-  apiKey,
-}: {
-  apiUrl: string;
-  apiKey: string;
-}): Promise<Record<string, number>> {
+export async function getApPollRanks(
+  {
+    apiUrl,
+    apiKey,
+  }: {
+    apiUrl: string;
+    apiKey: string;
+  },
+  week: number
+): Promise<Record<string, number>> {
   const url = new URL(`${apiUrl}/rankings`);
   url.searchParams.set('year', '2023');
-  url.searchParams.set('week', '8');
+  url.searchParams.set('week', '' + week);
   url.searchParams.set('seasonType', 'regular');
 
   const response = await fetch(url, { method: 'get', headers: { authorization: `Bearer ${apiKey}` } });

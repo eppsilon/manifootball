@@ -36,7 +36,7 @@ export async function getUser({ apiUrl, apiKey }: { apiUrl: string; apiKey: stri
   return result;
 }
 
-interface NewMarket {
+export interface NewMarket {
   outcomeType: 'BINARY' | 'MULTIPLE_CHOICE' | 'PSEUDO_NUMERIC' | 'POLL' | 'BOUNTIED_QUESTION';
   question: string;
   description?: string;
@@ -76,6 +76,7 @@ export interface Market {
   lastUpdatedTime: number;
   coverImageUrl: string;
   textDescription: string;
+  groupSlugs?: string[];
 }
 
 export async function searchMarkets(
@@ -109,9 +110,24 @@ export function createMarket(
   { apiUrl, apiKey }: { apiUrl: string; apiKey: string },
   market: NewMarket
 ): Promise<Response> {
-  return fetch(`${apiUrl}/market`, {
+  const response = fetch(`${apiUrl}/market`, {
     method: 'post',
-    headers: { authorization: `Key ${apiKey}` },
+    headers: { authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify(market),
   });
+  return response;
+}
+
+export function editMarketGroup(
+  { apiUrl, apiKey }: { apiUrl: string; apiKey: string },
+  marketId: string,
+  groupId: string,
+  remove = false
+): Promise<Response> {
+  const response = fetch(`${apiUrl}/market/${marketId}/group`, {
+    method: 'post',
+    headers: { authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ groupId, remove }),
+  });
+  return response;
 }
