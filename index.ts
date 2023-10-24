@@ -1,4 +1,4 @@
-import { compact, difference, sortBy, uniq, uniqBy } from 'lodash-es';
+import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { readFile, writeFile } from 'node:fs/promises';
@@ -96,9 +96,11 @@ try {
     matchingGames = {};
   }
 
-  // console.log(games);
-
   for (let game of games) {
+    if (process.argv.length > 1 && `${game.id}` !== process.argv[2]) {
+      continue;
+    }
+
     console.log('-'.repeat(80));
     const startDate = new Date(game.start_date);
 
@@ -106,8 +108,11 @@ try {
     if (game.start_time_tbd || (startDate.getHours() === 23 && startDate.getMinutes() === 59)) {
       formattedStartDate = `${game.start_date.substring(0, game.start_date.indexOf('T'))} at TBD`;
     } else {
+      console.debug('game.start_date', game.start_date);
       const startTimestamp = new Date(game.start_date).getTime();
-      const startDate = new Date(startTimestamp + 10800);
+      console.debug('startTimestamp', startTimestamp);
+      const startDate = new Date(startTimestamp + 3 * 60 * 60 * 1000);
+      console.debug('startDate', startDate);
       const startMonth = `${startDate.getMonth() + 1}`.padStart(2, '0');
       const startDay = `${startDate.getDate()}`.padStart(2, '0');
       const startHours = startDate.getHours();
@@ -165,6 +170,7 @@ try {
 
       if (alreadyMatched) {
         console.log('Already marked as existing - will not create');
+        matchingMarket = first(matchingMarkets);
         canCreate = false;
       } else {
         const selectedMatch = await select('Which market matches?');
@@ -203,10 +209,18 @@ try {
         if (confirmCreate === 'Y') {
           try {
             const response = await createMarket(MF_API, newMarket);
-            createdMarket = await response.json();
-            console.log('Market created', createdMarket);
+            if (response.ok) {
+              createdMarket = await response.json();
+              console.log('Market created', createdMarket);
+            } else {
+              let error: { message: string } | undefined;
+              try {
+                error = await response.json();
+              } catch {}
+              console.error('Failed to create market:', error?.message);
+            }
           } catch (e) {
-            console.error('Failed to create market', e);
+            console.error('Failed to create market:', e);
           }
         } else if (confirmCreate === 'Q') {
           console.log('Quitting');
@@ -272,6 +286,23 @@ try {
         }
       } else {
         console.log('No groups need removing');
+      }
+
+      if (market.closeTime !== startDate.getTime() + MF_CLOSE_PADDING_MS) {
+        const closeTime = new Date(startDate.getTime() + MF_CLOSE_PADDING_MS);
+        if (
+          (await confirm(
+            `Update "${market.question}" close time to ${closeTime.getHours()}:${closeTime.getMinutes()}`
+          )) === 'Q'
+        ) {
+          break;
+        }
+      }
+
+      if (market.textDescription !== formattedStartDate) {
+        if ((await confirm(`Update "${market.question}" description to "${formattedStartDate}"`)) === 'Q') {
+          break;
+        }
       }
     }
   }
