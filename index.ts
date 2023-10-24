@@ -1,12 +1,13 @@
 import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
-import readline from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
 import { readFile, writeFile } from 'node:fs/promises';
+import { stdin as input, stdout as output } from 'node:process';
+import readline from 'node:readline/promises';
+import { CFB_API_KEY, MF_API_KEY } from './config';
 import { Market, NewMarket, User, createMarket, editMarketGroup, getMarket, getUser, searchMarkets } from './manifold';
 import { Game, getApPollRanks, getGames } from './stats';
 
 const CFB_API_URL = 'https://api.collegefootballdata.com';
-export const MF_API_URL = 'https://manifold.markets/api/v0';
+const MF_API_URL = 'https://manifold.markets/api/v0';
 
 const CFB_API = { apiUrl: CFB_API_URL, apiKey: CFB_API_KEY };
 const MF_API = { apiUrl: MF_API_URL, apiKey: MF_API_KEY };
