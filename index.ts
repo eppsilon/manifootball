@@ -2,7 +2,7 @@ import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
 import { readFile, writeFile } from 'node:fs/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import readline from 'node:readline/promises';
-import { CFB_API_KEY, MF_API_KEY } from './config';
+import { CFB_API_KEY, CFB_WEEK, MF_API_KEY } from './config';
 import { Market, NewMarket, User, createMarket, editMarketGroup, getMarket, getUser, searchMarkets } from './manifold';
 import { Game, getApPollRanks, getGames } from './stats';
 
@@ -35,7 +35,6 @@ const CFB_CONFERENCES_TO_MF_GROUPS = {
   SEC: 'sec',
 };
 
-const CFB_WEEK = 9;
 const MF_CLOSE_PADDING_MS = 4 * 60 * 60 * 1000;
 
 const rl = readline.createInterface({ input, output });
