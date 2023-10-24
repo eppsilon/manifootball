@@ -4,6 +4,9 @@
 
 ## Usage
 
+> **This tool is not well-written or well-tested and should be used with care.**
+> Your mana may disappear mysteriously. Don't gamble with mana you can't afford to lose!
+
 Clone this repository. Install [Bun](https://bun.sh) if necessary, then run `bun install` in the repo folder. Create a file called `config.ts` with these constants:
 
 ```ts
