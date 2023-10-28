@@ -1,15 +1,16 @@
 import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
 import { readFile, writeFile } from 'node:fs/promises';
 import { stdin as input, stdout as output } from 'node:process';
-import readline from 'node:readline/promises';
-import { CFB_API_KEY, CFB_WEEK, MF_API_KEY } from './config';
+import * as readline from 'node:readline/promises';
+import { CACHE_PATH, CFB_API_KEY, CFB_WEEK, MF_API_KEY } from './config';
 import { Market, NewMarket, User, createMarket, editMarketGroup, getMarket, getUser, searchMarkets } from './manifold';
-import { Game, getApPollRanks, getGames } from './stats';
+import { Game, Venue, getApPollRanks, getGames, getVenues } from './stats';
+import { resolve } from 'node:path';
 
 const CFB_API_URL = 'https://api.collegefootballdata.com';
 const MF_API_URL = 'https://manifold.markets/api/v0';
 
-const CFB_API = { apiUrl: CFB_API_URL, apiKey: CFB_API_KEY };
+const CFB_API = { apiUrl: CFB_API_URL, apiKey: CFB_API_KEY, cachePath: resolve(CACHE_PATH) };
 const MF_API = { apiUrl: MF_API_URL, apiKey: MF_API_KEY };
 
 const MF_GROUPS = {
@@ -81,6 +82,14 @@ try {
     process.exit(1);
   }
 
+  let venues: Record<string, Venue>;
+  try {
+    venues = await getVenues(CFB_API);
+  } catch (e: unknown) {
+    console.error(`Could not get venues`, e);
+    process.exit(1);
+  }
+
   let games: Game[];
   try {
     games = await getGames(CFB_API, CFB_WEEK);
@@ -96,8 +105,10 @@ try {
     matchingGames = {};
   }
 
+  console.log('argv', process.argv);
+
   for (let game of games) {
-    if (process.argv.length > 1 && `${game.id}` !== process.argv[2]) {
+    if (process.argv.length > 2 && `${game.id}` !== process.argv[2]) {
       continue;
     }
 
@@ -127,6 +138,9 @@ try {
     const homeRank = apRanks[game.home_team];
     const awayTeam = awayRank ? `#${awayRank} ${game.away_team}` : game.away_team;
     const homeTeam = homeRank ? `#${homeRank} ${game.home_team}` : game.home_team;
+
+    const venue = venues[game.venue_id];
+    const description = `${formattedStartDate} in ${venue.city}, ${venue.state}`;
 
     console.log(
       `${formattedStartDate}: ${awayTeam} (${game.away_pregame_elo}) @ ${homeTeam} (${game.home_pregame_elo})`
@@ -199,7 +213,7 @@ try {
         const newMarket: NewMarket = {
           question: `🏈 2023 NCAAF: Will ${awayTeam} beat ${homeTeam}?`,
           outcomeType: 'BINARY',
-          description: `${formattedStartDate}`,
+          description,
           closeTime: startDate.getTime() + MF_CLOSE_PADDING_MS,
           initialProb: 50,
           groupId: MF_GROUPS['college-football'],
@@ -290,22 +304,24 @@ try {
 
       if (market.closeTime !== startDate.getTime() + MF_CLOSE_PADDING_MS) {
         const closeTime = new Date(startDate.getTime() + MF_CLOSE_PADDING_MS);
+        const closeTimeMinutes = `${closeTime.getMinutes()}`.padStart(2, '0');
         if (
-          (await confirm(
-            `Update "${market.question}" close time to ${closeTime.getHours()}:${closeTime.getMinutes()}`
-          )) === 'Q'
+          (await confirm(`Update "${market.question}" close time to ${closeTime.getHours()}:${closeTimeMinutes}`)) ===
+          'Q'
         ) {
           break;
         }
       }
 
-      if (market.textDescription !== formattedStartDate) {
-        if ((await confirm(`Update "${market.question}" description to "${formattedStartDate}"`)) === 'Q') {
+      if (market.textDescription !== description) {
+        if ((await confirm(`Update "${market.question}" description to "${description}"`)) === 'Q') {
           break;
         }
       }
     }
   }
+} catch (e) {
+  console.error(e);
 } finally {
   rl.close();
   await writeFile('./matching-games.json', JSON.stringify(matchingGames, null, 2), { encoding: 'utf-8' });
