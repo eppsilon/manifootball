@@ -1,5 +1,4 @@
-import { readFile, stat, writeFile } from 'fs/promises';
-import { find, first, keyBy, mapValues } from 'lodash-es';
+import { find, first, keyBy, last, mapValues, sortBy } from 'lodash-es';
 import { join } from 'node:path/posix';
 import * as cache from './cache';
 
@@ -96,6 +95,7 @@ export async function getApPollRanks(
   week: number
 ): Promise<Record<string, number>> {
   cachePath = join(cachePath, 'ap-ranks');
+
   const url = new URL(`${apiUrl}/rankings`);
   url.searchParams.set('year', '2023');
   url.searchParams.set('week', '' + week);
@@ -162,6 +162,73 @@ export async function getVenues({
   const result = (await response.json()) as Venue[];
 
   const data = keyBy(result, v => v.id);
+  await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, data);
+  return data;
+}
+
+export interface BettingGame {
+  id: number;
+  season: number;
+  seasonType: 'regular';
+  week: number;
+  startDate: string;
+  homeTeam: string;
+  homeConference: string;
+  homeScore: number;
+  awayTeam: string;
+  awayConference: string;
+  awayScore: number;
+  lines: {
+    provider: string;
+    spread: string;
+    formattedSpread: string;
+    spreadOpen: string;
+    overUnder: string;
+    overUnderOpen: string | null;
+    homeMoneyline: string | null;
+    awayMoneyline: string | null;
+  }[];
+}
+
+export async function getGameSpread(
+  {
+    apiUrl,
+    apiKey,
+    cachePath,
+  }: {
+    apiUrl: string;
+    apiKey: string;
+    cachePath: string;
+  },
+  gameId: number
+): Promise<string> {
+  cachePath = join(cachePath, 'lines');
+
+  const url = new URL(`${apiUrl}/lines`);
+  url.searchParams.set('gameId', '' + gameId);
+
+  const headResponse = await fetch(url, { method: 'head', headers: { authorization: `Bearer ${apiKey}` } });
+  const cachedData = await cache.load(cachePath, `${url}-${headResponse.headers.get('etag')}`);
+
+  if (cachedData != null) {
+    return cachedData as string;
+  }
+
+  const response = await fetch(url, { method: 'get', headers: { authorization: `Bearer ${apiKey}` } });
+  const result = (await response.json()) as BettingGame[];
+  const lines = sortBy(first(result)?.lines || [], l => l.spread);
+
+  const spreads = lines.reduce((s, l) => ({ [l.spread]: (s[l.spread] || 0) + 1 }), {} as Record<string, number>);
+  const [majoritySpread] = Object.entries(spreads).find(([, c]) => c > lines.length / 2) || [];
+
+  let data: string;
+  if (majoritySpread) {
+    data = majoritySpread;
+  } else {
+    const [mostCommonSpread] = last(sortBy(Object.entries(spreads), ([, c]) => c));
+    data = mostCommonSpread;
+  }
+
   await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, data);
   return data;
 }

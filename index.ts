@@ -1,11 +1,11 @@
 import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
 import { readFile, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import * as readline from 'node:readline/promises';
 import { CACHE_PATH, CFB_API_KEY, CFB_WEEK, MF_API_KEY } from './config';
 import { Market, NewMarket, User, createMarket, editMarketGroup, getMarket, getUser, searchMarkets } from './manifold';
-import { Game, Venue, getApPollRanks, getGames, getVenues } from './stats';
-import { resolve } from 'node:path';
+import { Game, Venue, getApPollRanks, getGameSpread, getGames, getVenues } from './stats';
 
 const CFB_API_URL = 'https://api.collegefootballdata.com';
 const MF_API_URL = 'https://manifold.markets/api/v0';
@@ -139,8 +139,17 @@ try {
     const awayTeam = awayRank ? `#${awayRank} ${game.away_team}` : game.away_team;
     const homeTeam = homeRank ? `#${homeRank} ${game.home_team}` : game.home_team;
 
+    let description = `${formattedStartDate}`;
+
     const venue = venues[game.venue_id];
-    const description = `${formattedStartDate} in ${venue.city}, ${venue.state}`;
+    if (venue) {
+      description += ` in ${venue.city}, ${venue.state}`;
+    }
+
+    const spread = await getGameSpread(CFB_API, game.id);
+    if (spread) {
+      description += `. Line: ${game.home_team} ${spread}.`;
+    }
 
     console.log(
       `${formattedStartDate}: ${awayTeam} (${game.away_pregame_elo}) @ ${homeTeam} (${game.home_pregame_elo})`
@@ -305,16 +314,13 @@ try {
       if (market.closeTime !== startDate.getTime() + MF_CLOSE_PADDING_MS) {
         const closeTime = new Date(startDate.getTime() + MF_CLOSE_PADDING_MS);
         const closeTimeMinutes = `${closeTime.getMinutes()}`.padStart(2, '0');
-        if (
-          (await confirm(`Update "${market.question}" close time to ${closeTime.getHours()}:${closeTimeMinutes}`)) ===
-          'Q'
-        ) {
+        if ((await confirm(`Update close time to ${closeTime.getHours()}:${closeTimeMinutes}`)) === 'Q') {
           break;
         }
       }
 
       if (market.textDescription !== description) {
-        if ((await confirm(`Update "${market.question}" description to "${description}"`)) === 'Q') {
+        if ((await confirm(`Update description to "${description}"`)) === 'Q') {
           break;
         }
       }
