@@ -77,6 +77,7 @@ export interface Market {
   coverImageUrl: string;
   textDescription: string;
   groupSlugs?: string[];
+  description?: { type: 'doc'; content: { type: 'paragraph'; content: { type: 'text'; text: string } } };
 }
 
 export async function searchMarkets(
@@ -127,7 +128,21 @@ export function editMarketGroup(
   const response = fetch(`${apiUrl}/market/${marketId}/group`, {
     method: 'post',
     headers: { authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ groupId, remove }),
+    body: JSON.stringify(remove ? { groupId, remove } : { groupId }),
   });
+  return response;
+}
+
+export async function resolveMarket(
+  { apiUrl, apiKey }: { apiUrl: string; apiKey: string },
+  marketId: string,
+  outcome: 'YES' | 'NO' | 'MKT' | 'CANCEL'
+): Promise<Response> {
+  const response = await fetch(`${apiUrl}/market/${marketId}/resolve`, {
+    method: 'post',
+    headers: { authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ outcome }),
+  });
+  console.debug('resolveMarket()', response);
   return response;
 }

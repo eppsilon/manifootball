@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export async function load(path: string, key: string): Promise<unknown> {
@@ -19,7 +19,8 @@ export async function load(path: string, key: string): Promise<unknown> {
     const data = await readFile(join(path, `${key}.json`), { encoding: 'utf-8' });
     if (data) {
       try {
-        return JSON.parse(data);
+        const parsedData = JSON.parse(data);
+        return typeof parsedData === 'object' && 'ts' in parsedData ? parsedData.data : parsedData;
       } catch (e) {
         console.warn(`cache.load(): error parsing cache data; path=${path}, key=${key}`);
       } finally {
@@ -40,7 +41,7 @@ export async function save(path: string, key: string, data: unknown): Promise<vo
   key = Bun.SHA1.hash(key, 'hex');
 
   try {
-    await writeFile(join(path, `${key}.json`), JSON.stringify(data), { encoding: 'utf-8' });
+    await writeFile(join(path, `${key}.json`), JSON.stringify({ ts: Date.now(), data }), { encoding: 'utf-8' });
     console.debug(`cache.save(): cache write; path=${path}, key=${key}`);
   } catch (e) {
     console.warn('cache.save(): could not save data to cache', e);

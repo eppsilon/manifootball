@@ -147,8 +147,8 @@ try {
     }
 
     const spread = await getGameSpread(CFB_API, game.id);
-    if (spread) {
-      description += `. Line: ${game.home_team} ${spread}.`;
+    if (spread != null) {
+      description += `. Line: ${game.home_team} ${Number.isNaN(spread) || +spread < 0 ? '' : '+'}${+spread}.`;
     }
 
     console.log(
@@ -185,7 +185,7 @@ try {
     let matchingMarket: Market | undefined;
     let canCreate = true;
     if (matchingMarkets.length > 0) {
-      console.log('Found existing market(s): ');
+      console.log('Found existing market(s):');
 
       for (const [market, i] of matchingMarkets.map((m, i) => [m, i] as const)) {
         console.log(`${i + 1}. `, market.question);
@@ -234,6 +234,8 @@ try {
             const response = await createMarket(MF_API, newMarket);
             if (response.ok) {
               createdMarket = await response.json();
+              createdMarket.textDescription = description; // desc comes back as object
+              matchingGames[`${game.id}_${createdMarket.id}`] = true;
               console.log('Market created', createdMarket);
             } else {
               let error: { message: string } | undefined;
