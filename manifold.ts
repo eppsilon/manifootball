@@ -1,3 +1,12 @@
+import { join } from 'node:path';
+import * as cache from './cache';
+
+export interface Config {
+  apiUrl: string;
+  apiKey: string;
+  cachePath: string;
+}
+
 export interface User {
   isBannedFromPosting: boolean;
   createdTime: number;
@@ -29,7 +38,7 @@ export interface User {
   lastBetTime: number;
 }
 
-export async function getUser({ apiUrl, apiKey }: { apiUrl: string; apiKey: string }): Promise<User> {
+export async function getUser({ apiUrl, apiKey }: Config): Promise<User> {
   const url = new URL(`${apiUrl}/me`);
   const response = await fetch(url, { method: 'get', headers: { authorization: `Key ${apiKey}` } });
   const result = response.json();
@@ -81,36 +90,73 @@ export interface Market {
 }
 
 export async function searchMarkets(
-  { apiUrl, apiKey }: { apiUrl: string; apiKey: string },
-  terms: string
+  { apiUrl, apiKey, cachePath }: Config,
+  {
+    terms,
+    filter,
+    creatorId,
+  }: {
+    terms?: string;
+    filter?: 'all' | 'open' | 'closed' | 'resolved' | 'closing-this-month' | 'closing-next-month';
+    creatorId?: string;
+  }
 ): Promise<Market[]> {
+  cachePath = join(cachePath, 'search-markets');
   const url = new URL(`${apiUrl}/search-markets`);
-  url.searchParams.set('terms', terms);
+
+  if (terms) {
+    url.searchParams.set('term', terms);
+  }
+
+  if (filter) {
+    url.searchParams.set('filter', filter);
+  }
+
+  if (creatorId) {
+    url.searchParams.set('creatorId', creatorId);
+  }
+
+  const headResponse = await fetch(url, { method: 'head', headers: { authorization: `Key ${apiKey}` } });
+  const cachedData = await cache.load(cachePath, `${url}-${headResponse.headers.get('etag')}`);
+
+  if (cachedData != null) {
+    return cachedData as Market[];
+  }
+
   const response = await fetch(url, {
     method: 'get',
     headers: { authorization: `Key ${apiKey}` },
   });
   const results = (await response.json()) as Market[];
+  await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, results);
   return results;
 }
 
-export async function getMarket(
-  { apiUrl, apiKey }: { apiUrl: string; apiKey: string },
-  marketId: string
-): Promise<Market> {
+export async function getMarket({ apiUrl, apiKey, cachePath }: Config, marketId: string): Promise<Market> {
+  cachePath = join(cachePath, 'market');
   const url = new URL(`${apiUrl}/market/${marketId}`);
+  const headResponse = await fetch(url, { method: 'head', headers: { authorization: `Key ${apiKey}` } });
+  const cachedData = await cache.load(cachePath, `${url}-${headResponse.headers.get('etag')}`);
+
+  if (cachedData != null) {
+    return cachedData as Market;
+  }
+
   const response = await fetch(url, {
     method: 'get',
     headers: { authorization: `Key ${apiKey}` },
   });
+
+  if (response.status === 404) {
+    return undefined;
+  }
+
   const market = (await response.json()) as Market;
+  await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, market);
   return market;
 }
 
-export function createMarket(
-  { apiUrl, apiKey }: { apiUrl: string; apiKey: string },
-  market: NewMarket
-): Promise<Response> {
+export function createMarket({ apiUrl, apiKey }: Config, market: NewMarket): Promise<Response> {
   const response = fetch(`${apiUrl}/market`, {
     method: 'post',
     headers: { authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
@@ -120,7 +166,7 @@ export function createMarket(
 }
 
 export function editMarketGroup(
-  { apiUrl, apiKey }: { apiUrl: string; apiKey: string },
+  { apiUrl, apiKey }: Config,
   marketId: string,
   groupId: string,
   remove = false
@@ -134,7 +180,7 @@ export function editMarketGroup(
 }
 
 export async function resolveMarket(
-  { apiUrl, apiKey }: { apiUrl: string; apiKey: string },
+  { apiUrl, apiKey }: Config,
   marketId: string,
   outcome: 'YES' | 'NO' | 'MKT' | 'CANCEL'
 ): Promise<Response> {

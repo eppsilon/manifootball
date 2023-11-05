@@ -82,7 +82,7 @@ interface Polls {
   polls: Poll[];
 }
 
-export async function getApPollRanks(
+export async function getPollRanks(
   {
     apiUrl,
     apiKey,
@@ -92,12 +92,18 @@ export async function getApPollRanks(
     apiKey: string;
     cachePath: string;
   },
-  week: number
+  { year, week, poll }: { year?: number; week: number; poll: 'ap' | 'cfp' }
 ): Promise<Record<string, number>> {
-  cachePath = join(cachePath, 'ap-ranks');
+  cachePath = join(cachePath, 'rankings');
+  year ||= new Date().getFullYear();
+
+  const pollName = poll === 'ap' ? 'AP Top 25' : poll === 'cfp' ? 'Playoff Committee Rankings' : undefined;
+  if (!pollName) {
+    throw new Error('Unexpected poll: must be "ap" or "cfp"');
+  }
 
   const url = new URL(`${apiUrl}/rankings`);
-  url.searchParams.set('year', '2023');
+  url.searchParams.set('year', '' + year);
   url.searchParams.set('week', '' + week);
   url.searchParams.set('seasonType', 'regular');
 
@@ -110,9 +116,9 @@ export async function getApPollRanks(
 
   const response = await fetch(url, { method: 'get', headers: { authorization: `Bearer ${apiKey}` } });
   const result = (await response.json()) as Polls[];
-  const apPoll = find(first(result)?.polls, p => p.poll === 'AP Top 25');
+  const pollData = find(first(result)?.polls, p => p.poll === pollName);
   const data = mapValues(
-    keyBy(apPoll?.ranks, p => p.school),
+    keyBy(pollData?.ranks, p => p.school),
     r => r.rank
   );
   await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, data);
@@ -217,22 +223,168 @@ export async function getGameSpread(
   const response = await fetch(url, { method: 'get', headers: { authorization: `Bearer ${apiKey}` } });
   const result = (await response.json()) as BettingGame[];
   const lines = sortBy(first(result)?.lines || [], l => l.spread);
-  console.debug('getGameSpread(): lines', lines);
+  // console.debug('getGameSpread(): lines', lines);
 
   const spreads = lines.reduce((s, l) => ({ [l.spread]: (s[l.spread] || 0) + 1 }), {} as Record<string, number>);
-  console.debug('getGameSpread(): spreads', spreads);
+  // console.debug('getGameSpread(): spreads', spreads);
   const [majoritySpread] = Object.entries(spreads).find(([, c]) => c > lines.length / 2) || [];
-  console.debug('getGameSpread(): majoritySpread', majoritySpread);
+  // console.debug('getGameSpread(): majoritySpread', majoritySpread);
 
   let data: string;
   if (majoritySpread) {
     data = majoritySpread;
   } else {
     const [mostCommonSpread] = last(sortBy(Object.entries(spreads), ([, c]) => c)) || [];
-    console.debug('getGameSpread(): mostCommonSpread', mostCommonSpread);
+    // console.debug('getGameSpread(): mostCommonSpread', mostCommonSpread);
     data = mostCommonSpread;
   }
 
   await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, data);
   return data;
+}
+
+export interface ScoreboardGame {
+  id: number;
+  startDate: string;
+  startTimeTBD: boolean;
+  tv: string;
+  neutralSite: boolean;
+  conferenceGame: boolean;
+  status: 'scheduled' | 'in_progress' | 'completed';
+  period: 1 | 2 | 3 | 4 | null;
+  clock: string | null;
+  situation: string | null;
+  possession: 'home' | 'away' | null;
+  venue: {
+    name: string;
+    city: string;
+    state: string;
+  };
+  homeTeam: {
+    id: number;
+    name: string;
+    conference: string;
+    classification: 'fbs';
+    points: number | null;
+  };
+  awayTeam: {
+    id: number;
+    name: string;
+    conference: string;
+    classification: 'fbs';
+    points: number | null;
+  };
+  weather: {
+    temperature: string;
+    description: string;
+    windSpeed: string;
+    windDirection: string;
+  };
+  betting: {
+    spread: string;
+    overUnder: string;
+    homeMoneyline: number;
+    awayMoneyline: number;
+  };
+}
+
+export async function getScoreboard(
+  {
+    apiUrl,
+    apiKey,
+    cachePath,
+  }: {
+    apiUrl: string;
+    apiKey: string;
+    cachePath: string;
+  },
+  classification?: 'fbs' | 'fcs' | 'ii' | 'iii',
+  conference?: string
+): Promise<ScoreboardGame[]> {
+  cachePath = join(cachePath, 'scoreboard');
+  const url = new URL(`${apiUrl}/scoreboard`);
+
+  if (classification) {
+    url.searchParams.set('classification', classification);
+  }
+
+  if (conference) {
+    url.searchParams.set('conference', conference);
+  }
+
+  const headResponse = await fetch(url, { method: 'head', headers: { authorization: `Bearer ${apiKey}` } });
+  const cachedData = await cache.load(cachePath, `${url}-${headResponse.headers.get('etag')}`);
+
+  if (cachedData != null) {
+    return cachedData as ScoreboardGame[];
+  }
+
+  const response = await fetch(url, { method: 'get', headers: { authorization: `Bearer ${apiKey}` } });
+  const result = (await response.json()) as ScoreboardGame[];
+  await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, result);
+  return result;
+}
+
+export interface Team {
+  id: number;
+  school: string;
+  mascot: string;
+  abbreviation: string;
+  alt_name1: string | null;
+  alt_name2: string | null;
+  alt_name3: string | null;
+  conference: string;
+  classification: 'fbs' | 'fcs' | 'ii' | 'iii';
+  color: string;
+  alt_color: string;
+  logos: string[];
+  twitter: string;
+  location: {
+    venue_id: number;
+    name: string;
+    city: string;
+    state: string;
+    zip: string;
+    country_code: string;
+    timezone: string;
+    latitude: number;
+    longitude: number;
+    elevation: string;
+    capacity: number;
+    year_constructed: number;
+    grass: boolean;
+    dome: boolean;
+  };
+}
+
+export async function getTeams(
+  {
+    apiUrl,
+    apiKey,
+    cachePath,
+  }: {
+    apiUrl: string;
+    apiKey: string;
+    cachePath: string;
+  },
+  conference?: string
+): Promise<Team[]> {
+  cachePath = join(cachePath, 'teams');
+  const url = new URL(`${apiUrl}/teams`);
+
+  if (conference) {
+    url.searchParams.set('conference', conference);
+  }
+
+  const headResponse = await fetch(url, { method: 'head', headers: { authorization: `Bearer ${apiKey}` } });
+  const cachedData = await cache.load(cachePath, `${url}-${headResponse.headers.get('etag')}`);
+
+  if (cachedData != null) {
+    return cachedData as Team[];
+  }
+
+  const response = await fetch(url, { method: 'get', headers: { authorization: `Bearer ${apiKey}` } });
+  const result = (await response.json()) as Team[];
+  await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, result);
+  return result;
 }

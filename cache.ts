@@ -24,7 +24,7 @@ export async function load(path: string, key: string): Promise<unknown> {
       } catch (e) {
         console.warn(`cache.load(): error parsing cache data; path=${path}, key=${key}`);
       } finally {
-        console.debug(`cache.load(): cache read; path=${path}, key=${key}`);
+        // console.debug(`cache.load(): cache read; path=${path}, key=${key}`);
       }
     }
   } catch {
@@ -42,7 +42,7 @@ export async function save(path: string, key: string, data: unknown): Promise<vo
 
   try {
     await writeFile(join(path, `${key}.json`), JSON.stringify({ ts: Date.now(), data }), { encoding: 'utf-8' });
-    console.debug(`cache.save(): cache write; path=${path}, key=${key}`);
+    // console.debug(`cache.save(): cache write; path=${path}, key=${key}`);
   } catch (e) {
     console.warn('cache.save(): could not save data to cache', e);
   }
