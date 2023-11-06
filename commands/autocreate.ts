@@ -1,5 +1,7 @@
+import chalk from 'chalk';
 import { Command, Option, OptionValues } from 'commander';
 import { intlFormat } from 'date-fns';
+import { Change, diffChars } from 'diff';
 import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -20,7 +22,7 @@ const MF_GROUPS = {
   'conference-usa': 'aa391c04-a211-4300-b4e7-08d78c2b52aa',
   'midamerican-conference': '1fc39c2a-b6f4-44c8-b58f-97cc0ca0184d',
   'mountain-west-conference': '53ab54e6-558f-4137-9ac7-bb592f23dd3b',
-  'pac-12': '1749cf04-48bc-4333-b900-2e1bad326051',
+  pac12: '1749cf04-48bc-4333-b900-2e1bad326051',
   sec: 'fced6b02-8033-4522-bfae-c3b9c0f9744d',
   'sun-belt-conference': 'a51e3e61-c09a-4d77-9513-cbd3d5c86625',
 };
@@ -33,7 +35,7 @@ const CFB_CONFERENCES_TO_MF_GROUPS = {
   'Conference USA': 'conference-usa',
   'Mid-American': 'midamerican-conference',
   'Mountain West': 'mountain-west-conference',
-  'Pac-12': 'pac-12',
+  'Pac-12': 'pac12',
   SEC: 'sec',
   'Sun Belt': 'sun-belt-conference',
 };
@@ -54,9 +56,10 @@ export class AutocreateCommand implements AsyncDisposable {
   }
 
   async run(options: OptionValues): Promise<void> {
-    const gameId = '' + options.game;
+    const gameId = options.game;
     const week = +options.week;
     const poll = options.poll as 'ap' | 'cfp';
+    console.debug({ gameId, week, poll });
 
     try {
       let mfUser: User;
@@ -128,9 +131,9 @@ export class AutocreateCommand implements AsyncDisposable {
       const etOffset = localFormat - etFormat;
 
       for (let game of games) {
-        // if (gameId && `${game.id}` !== gameId) {
-        //   continue;
-        // }
+        if (gameId && `${game.id}` !== gameId) {
+          continue;
+        }
 
         console.log('-'.repeat(80));
         const startDate = new Date(game.start_date);
@@ -341,7 +344,24 @@ export class AutocreateCommand implements AsyncDisposable {
           }
 
           if (market.textDescription !== description) {
-            if ((await this.confirm(`Update description to "${description}"`)) === 'Q') {
+            const descriptionChanges = diffChars(market.textDescription, description);
+
+            let markedUpDescription = '';
+            let change: Change;
+            while ((change = descriptionChanges.shift())) {
+              if (change.added) {
+                markedUpDescription += chalk.green.underline(change.value);
+              } else if (change.removed) {
+                markedUpDescription += chalk.red.strikethrough(change.value);
+              } else {
+                markedUpDescription += change.value;
+              }
+            }
+
+            console.log('New: ' + description);
+            console.log('Changes: ' + markedUpDescription);
+
+            if ((await this.confirm(`Update description`)) === 'Q') {
               break;
             }
           }
@@ -377,13 +397,14 @@ export class AutocreateCommand implements AsyncDisposable {
   }
 
   async [Symbol.asyncDispose]() {
-    console.debug('disposing');
-
+    // Must fully clean up readline or other programs in the same shell will not work correctly.
     this.rl.close();
     this.rl.removeAllListeners();
+    input.end();
+    input.destroy();
 
+    // Store matching game mapping.
     const matchingGamesPath = join(import.meta.dir, '..', 'matching-games.json');
-    console.debug('matchingGamesPath', matchingGamesPath);
     await writeFile(matchingGamesPath, JSON.stringify(this.matchingGames, null, 2), {
       encoding: 'utf-8',
     });
