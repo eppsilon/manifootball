@@ -98,7 +98,7 @@ export class AutocreateCommand implements AsyncDisposable {
 
       try {
         this.matchingGames = JSON.parse(
-          await readFile(join(import.meta.dir, '..', 'matching-games.json'), { encoding: 'utf-8' })
+          await readFile(join(import.meta.url, '..', 'matching-games.json'), { encoding: 'utf-8' })
         );
       } catch (e) {
         console.error('Failed to load or parse matching games', e);
@@ -404,7 +404,7 @@ export class AutocreateCommand implements AsyncDisposable {
     input.destroy();
 
     // Store matching game mapping.
-    const matchingGamesPath = join(import.meta.dir, '..', 'matching-games.json');
+    const matchingGamesPath = join(import.meta.url, '..', 'matching-games.json');
     await writeFile(matchingGamesPath, JSON.stringify(this.matchingGames, null, 2), {
       encoding: 'utf-8',
     });

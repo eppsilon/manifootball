@@ -1,5 +1,6 @@
 import { Chalk } from 'chalk';
 import { Command, Option, OptionValues } from 'commander';
+import { addDays } from 'date-fns';
 import { sortBy } from 'lodash-es';
 import { readFile } from 'node:fs/promises';
 import { table } from 'table';
@@ -99,12 +100,14 @@ export class ScoreboardCommand implements AsyncDisposable {
             return true;
           }
 
-          if (options.date === 'today') {
+          if (options.date === 'yesterday' || options.date === 'today' || options.date === 'tomorrow') {
             const gameDate = new Date(game.startDate);
+            const compareTo =
+              options.date === 'yesterday' ? addDays(now, -1) : options.date === 'tomorrow' ? addDays(now, 1) : now;
             return (
-              gameDate.getFullYear() === now.getFullYear() &&
-              gameDate.getMonth() === now.getMonth() &&
-              gameDate.getDate() === now.getDate()
+              gameDate.getFullYear() === compareTo.getFullYear() &&
+              gameDate.getMonth() === compareTo.getMonth() &&
+              gameDate.getDate() === compareTo.getDate()
             );
           }
 
