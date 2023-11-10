@@ -25,7 +25,8 @@
     "ws": "^8.14.2"
   },
   "scripts": {
-    "prepare": "husky install"
+    "prepare": "husky install",
+    "start": "node --import tsx/esm index.ts"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,md,html,css}": "prettier --write"

@@ -9,7 +9,8 @@ try {
   program.name('mf').description('Manifootball').version(packageJson['version']);
   commands.push(new AutocreateCommand(program), new ScoreboardCommand(program), new LiveCommand(program));
   await program.parseAsync();
-} catch {
+} catch (e) {
+  console.error(e);
   process.exit(1);
 } finally {
   await Promise.allSettled(

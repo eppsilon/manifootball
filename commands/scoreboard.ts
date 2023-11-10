@@ -79,12 +79,6 @@ export class ScoreboardCommand implements AsyncDisposable {
         .map(([ids]) => ids.split('_', 2))
     ) as Record<string, string>;
 
-    // console.log('scoreboard');
-    // console.log('classification', options.classification as string);
-    // console.log('conference', options.conference as string);
-    // console.log('status', options.status as string[]);
-    // console.log('date', options.date as string);
-
     const weekGames = Object.fromEntries((await getGames(CFB_API, week)).map(game => [game.id, game]));
     const scoreboardGames = await getScoreboard(CFB_API, options.classification, options.conference);
     const teams = Object.fromEntries((await getTeams(CFB_API)).map(team => [team.id, team])) as Record<number, Team>;

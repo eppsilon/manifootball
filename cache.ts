@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -7,7 +8,7 @@ export async function load(path: string, key: string): Promise<unknown> {
     return;
   }
 
-  key = Bun.SHA1.hash(key, 'hex');
+  key = getSha1Hash(key);
 
   try {
     mkdir(path, { recursive: true });
@@ -38,7 +39,7 @@ export async function save(path: string, key: string, data: unknown): Promise<vo
     return;
   }
 
-  key = Bun.SHA1.hash(key, 'hex');
+  key = getSha1Hash(key);
 
   try {
     await writeFile(join(path, `${key}.json`), JSON.stringify({ ts: Date.now(), data }), { encoding: 'utf-8' });
@@ -46,4 +47,8 @@ export async function save(path: string, key: string, data: unknown): Promise<vo
   } catch (e) {
     console.warn('cache.save(): could not save data to cache', e);
   }
+}
+
+function getSha1Hash(secret: string): string {
+  return createHmac('sha1', secret).digest('hex');
 }
