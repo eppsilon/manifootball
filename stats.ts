@@ -388,3 +388,64 @@ export async function getTeams(
   await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, result);
   return result;
 }
+
+export interface TeamMatchups {
+  team1: string;
+  team2: string;
+  startYear: string;
+  team1Wins: number;
+  team2Wins: number;
+  ties: number;
+  games: {
+    season: number;
+    week: number;
+    seasonType: 'regular';
+    date: string;
+    neutralSite: boolean;
+    venue: null;
+    homeTeam: string;
+    homeScore: number;
+    awayTeam: string;
+    awayScore: number;
+    winner: string;
+  }[];
+}
+
+export async function getTeamMatchups(
+  {
+    apiUrl,
+    apiKey,
+    cachePath,
+  }: {
+    apiUrl: string;
+    apiKey: string;
+    cachePath: string;
+  },
+  { team1, team2, minYear, maxYear }: { team1: string; team2: string; minYear?: number; maxYear?: number }
+): Promise<TeamMatchups> {
+  cachePath = join(cachePath, 'teams/matchup');
+
+  const url = new URL(`${apiUrl}/teams/matchup`);
+  url.searchParams.set('team1', team1);
+  url.searchParams.set('team2', team2);
+
+  if (minYear) {
+    url.searchParams.set('minYear', '' + minYear);
+  }
+
+  if (maxYear) {
+    url.searchParams.set('maxYear', '' + maxYear);
+  }
+
+  const headResponse = await fetch(url, { method: 'head', headers: { authorization: `Bearer ${apiKey}` } });
+  const cachedData = await cache.load(cachePath, `${url}-${headResponse.headers.get('etag')}`);
+
+  if (cachedData != null) {
+    return cachedData as TeamMatchups;
+  }
+
+  const response = await fetch(url, { method: 'get', headers: { authorization: `Bearer ${apiKey}` } });
+  const result = (await response.json()) as TeamMatchups;
+  await cache.save(cachePath, `${url}-${response.headers.get('etag')}`, result);
+  return result;
+}

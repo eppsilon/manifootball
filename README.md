@@ -7,7 +7,7 @@
 > **This tool is not well-written or well-tested and should be used with care.**
 > Your mana may disappear mysteriously. Don't gamble with mana you can't afford to lose!
 
-Clone this repository. Install [Bun](https://bun.sh) if necessary, then run `bun install` in the repo folder. Create a file called `config.ts` with these constants:
+Clone this repository. Install [Node 20.5+](https://nodejs.org) and [Yarn 1.x](https://classic.yarnpkg.com) if necessary, then run `yarn` in the repo folder. Create a file called `config.ts` with these constants:
 
 ```ts
 export const CFB_API_KEY = 'ABCXYZ'; // get a key here: https://collegefootballdata.com/key
@@ -58,6 +58,6 @@ Market created { … }
 - [ ] Support posting a comment on every game's market.
 - [ ] Support monitoring game progress and extending close times.
 - [ ] Support placing an initial bet on every market after creating it.
-- [ ] Use `yargs` or similar library for ARGV parsing and subcommands.
+- [x] Use `yargs` or similar library for ARGV parsing and subcommands.
 - [ ] Use `debug` or similar for configurable log levels.
-- [ ] Maybe: create NPM package to allow installing as a global or running with `bunx`/`npx`.
+- [ ] Maybe: create NPM package to allow installing as a global or running with `npx`.

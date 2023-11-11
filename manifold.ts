@@ -192,3 +192,16 @@ export async function resolveMarket(
   console.debug('resolveMarket()', response);
   return response;
 }
+
+export async function createComment(
+  { apiUrl, apiKey }: Config,
+  { marketId, content }: { marketId: string; content: string }
+): Promise<Response> {
+  const response = await fetch(`${apiUrl}/comment`, {
+    method: 'post',
+    headers: { authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ contractId: marketId, markdown: content }),
+  });
+  console.debug('createComment()', response);
+  return response;
+}

@@ -5,11 +5,11 @@ import { Change, diffChars } from 'diff';
 import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { stdin as input, stdout as output } from 'node:process';
-import * as readline from 'node:readline/promises';
 import { CFB_API, MF_API } from '../config';
 import { Market, NewMarket, User, createMarket, editMarketGroup, getMarket, getUser, searchMarkets } from '../manifold';
+import { ReadlinePrompter } from '../readline';
 import { Game, Venue, getGameSpread, getGames, getPollRanks, getVenues } from '../stats';
+import { formatDate, formatTime } from './util';
 
 const MF_GROUPS = {
   'sports-default': '2hGlgVhIyvVaFyQAREPi',
@@ -43,7 +43,7 @@ const CFB_CONFERENCES_TO_MF_GROUPS = {
 const MF_CLOSE_PADDING_MS = 4 * 60 * 60 * 1000;
 
 export class AutocreateCommand implements AsyncDisposable {
-  readonly rl = readline.createInterface({ input, output });
+  readonly rl = new ReadlinePrompter();
   matchingGames: Record<string, boolean> = {};
 
   constructor(program: Command) {
@@ -61,6 +61,8 @@ export class AutocreateCommand implements AsyncDisposable {
     const poll = options.poll as 'ap' | 'cfp';
     console.debug({ gameId, week, poll });
 
+    this.rl.initialize();
+
     try {
       let mfUser: User;
       try {
@@ -71,9 +73,9 @@ export class AutocreateCommand implements AsyncDisposable {
         return;
       }
 
-      let apRanks: Record<string, number>;
+      let ranks: Record<string, number>;
       try {
-        apRanks = await getPollRanks(CFB_API, { week, poll });
+        ranks = await getPollRanks(CFB_API, { week, poll });
       } catch (e: unknown) {
         console.error(`Could not get poll ranking`, e);
         return;
@@ -98,7 +100,7 @@ export class AutocreateCommand implements AsyncDisposable {
 
       try {
         this.matchingGames = JSON.parse(
-          await readFile(join(import.meta.url, '..', 'matching-games.json'), { encoding: 'utf-8' })
+          await readFile(join(process.cwd(), 'matching-games.json'), { encoding: 'utf-8' })
         );
       } catch (e) {
         console.error('Failed to load or parse matching games', e);
@@ -143,20 +145,12 @@ export class AutocreateCommand implements AsyncDisposable {
           formattedStartDate = `${game.start_date.substring(0, game.start_date.indexOf('T'))} at TBD`;
         } else {
           const startTimestamp = new Date(game.start_date).getTime();
-
           const startDate = new Date(startTimestamp + etOffset);
-          const startMonth = `${startDate.getMonth() + 1}`.padStart(2, '0');
-          const startDay = `${startDate.getDate()}`.padStart(2, '0');
-          const startHours = startDate.getHours();
-          const startHour = startHours > 12 ? startHours - 12 : startHours;
-          const startAmPm = startHours >= 12 ? 'PM' : 'AM';
-          const startMinute = startDate.getMinutes();
-          const startTime = startMinute ? `${startHour}:${('' + startMinute).padStart(2, '0')}` : startHour;
-          formattedStartDate = `${startDate.getFullYear()}-${startMonth}-${startDay} at ${startTime} ${startAmPm} ET`;
+          formattedStartDate = `${formatDate(startDate)} at ${formatTime(startDate)}`;
         }
 
-        const awayRank = apRanks[game.away_team];
-        const homeRank = apRanks[game.home_team];
+        const awayRank = ranks[game.away_team];
+        const homeRank = ranks[game.home_team];
         const awayTeam = awayRank ? `#${awayRank} ${game.away_team}` : game.away_team;
         const homeTeam = homeRank ? `#${homeRank} ${game.home_team}` : game.home_team;
 
@@ -218,7 +212,7 @@ export class AutocreateCommand implements AsyncDisposable {
             matchingMarket = first(matchingMarkets);
             canCreate = false;
           } else {
-            const selectedMatch = await this.select('Which market matches?', 1);
+            const selectedMatch = await this.rl.select('Which market matches?', 1);
             if (selectedMatch === 'Q') {
               console.log('Quitting');
               break;
@@ -244,7 +238,7 @@ export class AutocreateCommand implements AsyncDisposable {
 
         let createdMarket: Market | undefined = undefined;
         if (canCreate) {
-          const createResponse = await this.confirm('Create market?');
+          const createResponse = await this.rl.confirm('Create market?');
           if (createResponse === 'Y') {
             const newMarket: NewMarket = {
               question: `🏈 2023 NCAAF: Will ${awayTeam} beat ${homeTeam}?`,
@@ -255,7 +249,7 @@ export class AutocreateCommand implements AsyncDisposable {
               groupId: MF_GROUPS['college-football'],
             };
 
-            const confirmCreate = await this.confirm(`Create market ${JSON.stringify(newMarket, null, 2)}?`);
+            const confirmCreate = await this.rl.confirm(`Create market ${JSON.stringify(newMarket, null, 2)}?`);
             if (confirmCreate === 'Y') {
               try {
                 const response = await createMarket(MF_API, newMarket);
@@ -314,7 +308,7 @@ export class AutocreateCommand implements AsyncDisposable {
           }
 
           if (groupsToRemove.length > 0) {
-            const confirmRemoveGroups = await this.confirm(
+            const confirmRemoveGroups = await this.rl.confirm(
               `Remove groups ${groupsToRemove.join(', ')} from market ${market.question}?`
             );
             if (confirmRemoveGroups === 'Y') {
@@ -335,10 +329,10 @@ export class AutocreateCommand implements AsyncDisposable {
             console.log('No groups need removing');
           }
 
-          if (market.closeTime !== startDate.getTime() + MF_CLOSE_PADDING_MS) {
-            const closeTime = new Date(startDate.getTime() + MF_CLOSE_PADDING_MS);
-            const closeTimeMinutes = `${closeTime.getMinutes()}`.padStart(2, '0');
-            if ((await this.confirm(`Update close time to ${closeTime.getHours()}:${closeTimeMinutes}`)) === 'Q') {
+          const closeTimeMs = startDate.getTime() + MF_CLOSE_PADDING_MS;
+          if (market.closeTime !== closeTimeMs) {
+            const closeTime = new Date(closeTimeMs);
+            if ((await this.rl.confirm(`Update close time to ${formatTime(closeTime)}`)) === 'Q') {
               break;
             }
           }
@@ -361,7 +355,7 @@ export class AutocreateCommand implements AsyncDisposable {
             console.log('New: ' + description);
             console.log('Changes: ' + markedUpDescription);
 
-            if ((await this.confirm(`Update description`)) === 'Q') {
+            if ((await this.rl.confirm(`Update description`)) === 'Q') {
               break;
             }
           }
@@ -372,39 +366,11 @@ export class AutocreateCommand implements AsyncDisposable {
     }
   }
 
-  async confirm(prompt: string): Promise<'Y' | 'N' | 'Q'> {
-    let response = (await this.rl.question(`${prompt} [Y/N/Q] (N) `)).toUpperCase();
-    if (response !== 'Y' && response !== 'Q') {
-      response = 'N';
-    }
-    return response as 'Y' | 'N' | 'Q';
-  }
-
-  async select(prompt: string, defaultResponse: number | 'N' = 'N'): Promise<number | 'N' | 'Q'> {
-    let response: string | number | 'N' | 'Q' = (
-      await this.rl.question(`${prompt} [#/N/Q] (${defaultResponse}) `)
-    ).toUpperCase();
-
-    if (response !== '' && !Number.isNaN(+response)) {
-      return +response;
-    }
-
-    if (response !== 'Q' && response !== 'N') {
-      response = defaultResponse;
-    }
-
-    return response as number | 'N' | 'Q';
-  }
-
   async [Symbol.asyncDispose]() {
-    // Must fully clean up readline or other programs in the same shell will not work correctly.
-    this.rl.close();
-    this.rl.removeAllListeners();
-    input.end();
-    input.destroy();
+    this.rl[Symbol.asyncDispose]();
 
     // Store matching game mapping.
-    const matchingGamesPath = join(import.meta.url, '..', 'matching-games.json');
+    const matchingGamesPath = join(process.cwd(), 'matching-games.json');
     await writeFile(matchingGamesPath, JSON.stringify(this.matchingGames, null, 2), {
       encoding: 'utf-8',
     });
