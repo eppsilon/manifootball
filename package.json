@@ -26,7 +26,7 @@
   },
   "scripts": {
     "prepare": "husky install",
-    "start": "node --import tsx/esm index.ts"
+    "start": "node --no-warnings --import tsx/esm src/index.ts"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,md,html,css}": "prettier --write"

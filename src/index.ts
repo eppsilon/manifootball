@@ -4,13 +4,12 @@ import { CommentCommand } from './commands/comment';
 import { LiveCommand } from './commands/live';
 import { ScoreboardCommand } from './commands/scoreboard';
 import { CommandBase, CommandConstructor } from './commands/util';
-import * as packageJson from './package.json';
 
 let command: CommandBase;
 let commands: CommandConstructor[] = [AutocreateCommand, CommentCommand, ScoreboardCommand, LiveCommand];
 
 try {
-  program.name('mf').description('Manifootball').version(packageJson['version']);
+  program.name('mf').description('Manifootball').version('1.0.0');
   commands.forEach(c => {
     c.register(program).action(options => {
       console.debug('run command', c.name);
