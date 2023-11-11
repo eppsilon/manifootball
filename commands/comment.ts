@@ -6,20 +6,17 @@ import { CFB_API, MF_API } from '../config';
 import { User, createComment, getMarket, getUser } from '../manifold';
 import { ReadlinePrompter } from '../readline';
 import { Game, getGameSpread, getGames, getTeamMatchups } from '../stats';
-import { formatDate, formatSpread, mdBoldIf } from './util';
+import { CommandBase, formatDate, formatSpread, mdBoldIf } from './util';
 
-export class CommentCommand implements AsyncDisposable {
+export class CommentCommand implements CommandBase {
+  static register(program: Command): Command {
+    console.debug('CommentCommand register');
+    return program.command('comment').option('--game <id>').requiredOption('--week <number>');
+  }
+
   readonly rl = new ReadlinePrompter();
 
   matchingGames: Record<string, boolean> = {};
-
-  constructor(program: Command) {
-    program
-      .command('comment')
-      .option('--game <id>')
-      .requiredOption('--week <number>')
-      .action(options => this.run(options));
-  }
 
   async run(options: OptionValues): Promise<void> {
     const gameId = options.game;
@@ -48,7 +45,7 @@ export class CommentCommand implements AsyncDisposable {
 
       try {
         this.matchingGames = JSON.parse(
-          await readFile(join(process.cwd(), 'matching-games.json'), { encoding: 'utf-8' })
+          await readFile(join(process.cwd(), 'matching-games.json'), { encoding: 'utf-8', flag: 'r' })
         );
       } catch (e) {
         console.error('Failed to load or parse matching games', e);

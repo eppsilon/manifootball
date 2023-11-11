@@ -7,20 +7,20 @@ import { FastcastConnection } from '../fastcast';
 export class LiveCommand implements AsyncDisposable {
   fc: FastcastConnection;
 
-  constructor(program: Command) {
-    program
+  static register(program: Command): Command {
+    console.debug('LiveCommand register');
+    return program
       .command('live')
-      .argument('<game>')
+      .requiredOption('--game <game>')
       .addOption(
         new Option('--topic <topic>')
           .default('football-college-football')
           .choices(['football-college-football', 'hockey-nhl'])
-      )
-      .action((game, options) => this.run(game, options));
+      );
   }
 
-  async run(game: string, options: OptionValues) {
-    console.log('game', game);
+  async run(options: OptionValues) {
+    console.log('game', options.game);
     console.log('topic', options.topic);
 
     let done = false;
@@ -29,7 +29,7 @@ export class LiveCommand implements AsyncDisposable {
     this.fc.close$.subscribe(() => (done = true));
 
     await this.fc.connect();
-    this.fc.subscribe(game, options.topic).subscribe(([sid, mid, data]) => {
+    this.fc.subscribe(options.game, options.topic).subscribe(([sid, mid, data]) => {
       this.recordSnapshot(sid, mid, data);
       console.log('snap');
     });

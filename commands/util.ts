@@ -1,3 +1,5 @@
+import { Command, OptionValues } from 'commander';
+
 export function formatSpread(team: string, spread: string | number): string {
   return team && spread != null ? `${team} ${Number.isNaN(spread) || +spread < 0 ? '' : '+'}${+spread}` : 'unknown';
 }
@@ -20,4 +22,13 @@ export function formatTime(date: Date, tz = 'ET'): string {
 
 export function mdBoldIf(condition: boolean, text: string) {
   return condition ? `**${text}**` : text;
+}
+
+export interface CommandBase extends AsyncDisposable {
+  run(options: OptionValues): Promise<void>;
+}
+
+export interface CommandConstructor {
+  new (): CommandBase;
+  register(program: Command): Command;
 }

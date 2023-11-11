@@ -7,12 +7,14 @@ import { table } from 'table';
 import { CFB_API, MF_API } from '../config';
 import { Market, getMarket } from '../manifold';
 import { Game, ScoreboardGame, Team, getGames, getScoreboard, getTeams } from '../stats';
+import { CommandBase } from './util';
 
 const chalk = new Chalk({ level: 3 });
 
-export class ScoreboardCommand implements AsyncDisposable {
-  constructor(program: Command) {
-    program
+export class ScoreboardCommand implements CommandBase {
+  static register(program: Command): Command {
+    console.debug('ScoreboardCommand register');
+    return program
       .command('scoreboard')
       .addOption(new Option('--classification <classification>').choices(['fbs', 'fcs', 'ii', 'iii']).default('fbs'))
       .addOption(
@@ -59,8 +61,7 @@ export class ScoreboardCommand implements AsyncDisposable {
       .addOption(new Option('--status <status...>').choices(['scheduled', 'in_progress', 'completed']))
       .addOption(new Option('--date <date>').default('any'))
       .option('--unresolved')
-      .option('--week <number>')
-      .action(options => this.run(options));
+      .option('--week <number>');
   }
 
   async run(options: OptionValues) {
@@ -68,9 +69,10 @@ export class ScoreboardCommand implements AsyncDisposable {
 
     let matchingGames: Record<string, boolean>;
     try {
-      matchingGames = JSON.parse(await readFile('./matching-games.json', { encoding: 'utf-8' }));
-    } catch {
-      matchingGames = {};
+      matchingGames = JSON.parse(await readFile('./matching-games.json', { encoding: 'utf-8', flag: 'r' }));
+    } catch (e) {
+      console.error('Failed to load or parse matching games', e);
+      return;
     }
 
     const gameMarkets = Object.fromEntries(

@@ -9,7 +9,7 @@ import { CFB_API, MF_API } from '../config';
 import { Market, NewMarket, User, createMarket, editMarketGroup, getMarket, getUser, searchMarkets } from '../manifold';
 import { ReadlinePrompter } from '../readline';
 import { Game, Venue, getGameSpread, getGames, getPollRanks, getVenues } from '../stats';
-import { formatDate, formatTime } from './util';
+import { CommandBase, formatDate, formatTime } from './util';
 
 const MF_GROUPS = {
   'sports-default': '2hGlgVhIyvVaFyQAREPi',
@@ -42,18 +42,18 @@ const CFB_CONFERENCES_TO_MF_GROUPS = {
 
 const MF_CLOSE_PADDING_MS = 4 * 60 * 60 * 1000;
 
-export class AutocreateCommand implements AsyncDisposable {
-  readonly rl = new ReadlinePrompter();
-  matchingGames: Record<string, boolean> = {};
-
-  constructor(program: Command) {
-    program
+export class AutocreateCommand implements CommandBase {
+  static register(program: Command): Command {
+    console.debug('AutocreateCommand register');
+    return program
       .command('autocreate')
       .option('--game <id>')
       .requiredOption('--week <number>')
-      .addOption(new Option('--poll <poll>').choices(['ap', 'cfp']).makeOptionMandatory())
-      .action(options => this.run(options));
+      .addOption(new Option('--poll <poll>').choices(['ap', 'cfp']).makeOptionMandatory());
   }
+
+  readonly rl = new ReadlinePrompter();
+  matchingGames: Record<string, boolean> = {};
 
   async run(options: OptionValues): Promise<void> {
     const gameId = options.game;
@@ -100,11 +100,11 @@ export class AutocreateCommand implements AsyncDisposable {
 
       try {
         this.matchingGames = JSON.parse(
-          await readFile(join(process.cwd(), 'matching-games.json'), { encoding: 'utf-8' })
+          await readFile(join(process.cwd(), 'matching-games.json'), { encoding: 'utf-8', flag: 'r' })
         );
       } catch (e) {
         console.error('Failed to load or parse matching games', e);
-        this.matchingGames = {};
+        return;
       }
 
       const commonTime = new Date('2023-01-15T23:00:00Z');
