@@ -1,10 +1,11 @@
 import { Chalk } from 'chalk';
 import { Command, Option, OptionValues } from 'commander';
-import { addDays } from 'date-fns';
+import { addDays, addHours } from 'date-fns';
 import { sortBy } from 'lodash-es';
 import { readFile } from 'node:fs/promises';
 import { table } from 'table';
 import { CFB_API, MF_API } from '../config';
+import { Log } from '../log';
 import { Market, getMarket } from '../manifold';
 import { Game, ScoreboardGame, Team, getGames, getScoreboard, getTeams } from '../stats';
 import { CommandBase } from './util';
@@ -13,7 +14,7 @@ const chalk = new Chalk({ level: 3 });
 
 export class ScoreboardCommand implements CommandBase {
   static register(program: Command): Command {
-    console.debug('ScoreboardCommand register');
+    Log.debug('ScoreboardCommand register');
     return program
       .command('scoreboard')
       .addOption(new Option('--classification <classification>').choices(['fbs', 'fcs', 'ii', 'iii']).default('fbs'))
@@ -59,7 +60,7 @@ export class ScoreboardCommand implements CommandBase {
         ])
       )
       .addOption(new Option('--status <status...>').choices(['scheduled', 'in_progress', 'completed']))
-      .addOption(new Option('--date <date>').default('any'))
+      .addOption(new Option('--since <since>').default('any'))
       .option('--unresolved')
       .option('--week <number>');
   }
@@ -71,7 +72,7 @@ export class ScoreboardCommand implements CommandBase {
     try {
       matchingGames = JSON.parse(await readFile('./matching-games.json', { encoding: 'utf-8', flag: 'r' }));
     } catch (e) {
-      console.error('Failed to load or parse matching games', e);
+      Log.error('Failed to load or parse matching games', e);
       return;
     }
 
@@ -84,7 +85,29 @@ export class ScoreboardCommand implements CommandBase {
     const weekGames = Object.fromEntries((await getGames(CFB_API, week)).map(game => [game.id, game]));
     const scoreboardGames = await getScoreboard(CFB_API, options.classification, options.conference);
     const teams = Object.fromEntries((await getTeams(CFB_API)).map(team => [team.id, team])) as Record<number, Team>;
+
     const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    let minDate = new Date(1, 1, 1);
+    let maxDate = new Date(9999, 11, 31, 23, 59, 59, 999);
+
+    if (options.since === 'yesterday') {
+      minDate = addDays(today, -1);
+    } else if (options.since === 'today') {
+      minDate = today;
+    } else if (options.since === 'tomorrow') {
+      minDate = addDays(today, 1);
+    }
+
+    if (/\d+h/i.test(options.since)) {
+      const [, hours] = options.since.match(/(\d+)h/i);
+      minDate = addHours(now, -hours);
+    }
+
+    Log.debug('minDate', minDate.toLocaleString());
+    Log.debug('maxDate', maxDate.toLocaleString());
+
     const scoreboardGames2 = await Promise.all(
       scoreboardGames
         .filter(game => {
@@ -92,22 +115,8 @@ export class ScoreboardCommand implements CommandBase {
             return false;
           }
 
-          if (options.date === 'any') {
-            return true;
-          }
-
-          if (options.date === 'yesterday' || options.date === 'today' || options.date === 'tomorrow') {
-            const gameDate = new Date(game.startDate);
-            const compareTo =
-              options.date === 'yesterday' ? addDays(now, -1) : options.date === 'tomorrow' ? addDays(now, 1) : now;
-            return (
-              gameDate.getFullYear() === compareTo.getFullYear() &&
-              gameDate.getMonth() === compareTo.getMonth() &&
-              gameDate.getDate() === compareTo.getDate()
-            );
-          }
-
-          return true;
+          const gameDate = new Date(game.startDate);
+          return minDate <= gameDate && gameDate <= maxDate;
         })
         .map(async game => {
           const marketId = gameMarkets[game.id];
@@ -139,7 +148,7 @@ export class ScoreboardCommand implements CommandBase {
       const startTimeMinutes = `${startDate.getMinutes()}`.padStart(2, '0');
       const startDateCell = `${
         startDate.getMonth() + 1
-      }/${startDate.getDate()} @ ${startDate.getHours()}:${startTimeMinutes}`;
+      }/${startDate.getDate()}, ${startDate.getHours()}:${startTimeMinutes}`;
       const statusCell =
         game.status === 'completed'
           ? 'Final'
@@ -154,12 +163,12 @@ export class ScoreboardCommand implements CommandBase {
                 : game.period === 4
                 ? '4th '
                 : ' '
-            }${game.clock}`
+            }${game.clock?.startsWith('00:') ? game.clock.slice(game.clock.indexOf(':') + 1) : game.clock}`
           : 'Scheduled';
       const winning =
-        game.awayTeam.points > game.homeTeam.points
+        (game.awayTeam.points || 0) > (game.homeTeam.points || 0)
           ? 'away'
-          : game.homeTeam.points > game.awayTeam.points
+          : (game.homeTeam.points || 0) > (game.awayTeam.points || 0)
           ? 'home'
           : undefined;
       const awayName = winning === 'away' ? chalk.bold(weekGame.away_team) : weekGame.away_team;
@@ -211,25 +220,25 @@ export class ScoreboardCommand implements CommandBase {
       }
 
       const sitchRegex = new RegExp(
-        `^(\\d+)(?:st|nd|rd|th)\\s+&\\s+(\\d+)\\s+at\\s+${defTeam.abbreviation}\\s+(\\d+)$`,
+        `^(\\d+)(?:st|nd|rd|th)\\s+&\\s+(\\d+|goal)\\s+at\\s+${defTeam.abbreviation}\\s+(\\d+)$`,
         'i'
       );
-      const sitchMatches = game.situation.match(sitchRegex);
-      // console.log(sitchRegex);
-      // console.log(sitchMatches);
+      const sitchMatches = game.situation?.match(sitchRegex);
+      // Log.log(sitchRegex);
+      // Log.log(sitchMatches);
 
       let redZone = false;
       let yellowZone = false;
 
       if (sitchMatches?.length) {
         const [, down, distance, line] = sitchMatches;
-        if (+line <= 25) {
+        if (line === 'goal' || +line <= 25) {
           redZone = true;
         } else {
           yellowZone = true;
         }
 
-        // console.log({ down, distance, line, redZone, yellowZone });
+        // Log.log({ down, distance, line, redZone, yellowZone });
       }
 
       if (redZone) {

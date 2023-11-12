@@ -3,6 +3,7 @@ import { inflate } from 'pako';
 import { Subject, combineLatest, concatMap, filter, from, map, shareReplay, take, takeUntil, tap } from 'rxjs';
 import { WebSocketSubject, webSocket } from 'rxjs/webSocket';
 import WebSocket from 'ws';
+import { Log } from './log';
 
 const FC_URL = 'https://fastcast.semfs.engsvc.go.com/public/websockethost';
 
@@ -41,7 +42,7 @@ interface ResultOperationPayload {
 }
 
 interface ResultSocketOperation extends SocketOperation {
-  op: 'R';
+  op: 'R' | 'P';
   pl: string;
   mid: number;
   tc: string;
@@ -49,7 +50,7 @@ interface ResultSocketOperation extends SocketOperation {
 }
 
 function isResultSocketOperation(obj: unknown): obj is ResultSocketOperation {
-  return typeof obj === 'object' && obj != null && 'op' in obj && obj.op === 'R';
+  return typeof obj === 'object' && obj != null && 'op' in obj && (obj.op === 'R' || obj.op === 'P');
 }
 
 interface SessionSocketOperation extends SocketOperation {
@@ -90,7 +91,7 @@ type AnyDataOperation = AddDataOperation | ReplaceDataOperation | RemoveDataOper
 export class FastcastConnection implements AsyncDisposable {
   private readonly destroy$ = new Subject<boolean>();
 
-  ws$: WebSocketSubject<AnySocketOperation>;
+  ws$?: WebSocketSubject<AnySocketOperation>;
 
   open$ = new Subject<Event>();
   message$ = new Subject<AnySocketOperation>();
@@ -99,7 +100,7 @@ export class FastcastConnection implements AsyncDisposable {
 
   sid$ = this.message$.pipe(
     filter(data => data.op === 'C'),
-    map(data => data['sid'] as string),
+    map(data => (data as ConnectSocketOperation)['sid'] as string),
     shareReplay()
   );
 
@@ -114,14 +115,14 @@ export class FastcastConnection implements AsyncDisposable {
       WebSocketCtor: WebSocket as unknown as WebSocketCtor,
     });
 
-    this.open$.pipe(takeUntil(this.destroy$)).subscribe(() => console.log('open'));
-    this.closing$.pipe(takeUntil(this.destroy$)).subscribe(e => console.log('closing', e));
-    this.close$.pipe(takeUntil(this.destroy$)).subscribe(() => console.log('close'));
+    this.open$.pipe(takeUntil(this.destroy$)).subscribe(() => Log.debug('open'));
+    this.closing$.pipe(takeUntil(this.destroy$)).subscribe(e => Log.debug('closing', e));
+    this.close$.pipe(takeUntil(this.destroy$)).subscribe(() => Log.debug('close'));
 
     this.ws$
       .pipe(
         takeUntil(this.destroy$),
-        tap(data => console.log('message', data))
+        tap(data => Log.debug('message', data))
       )
       .subscribe(this.message$);
 
@@ -134,7 +135,7 @@ export class FastcastConnection implements AsyncDisposable {
     }
 
     this.sid$.pipe(takeUntil(this.destroy$), take(1)).subscribe(sid => {
-      this.ws$.next({ op: 'S', sid, tc: `gp-${topic}-${game}` } as SessionSocketOperation);
+      this.ws$?.next({ op: 'S', sid, tc: `gp-${topic}-${game}` } as SessionSocketOperation);
     });
 
     const hb$ = this.ws$.pipe(
@@ -147,7 +148,7 @@ export class FastcastConnection implements AsyncDisposable {
     const operations$ = this.ws$.pipe(
       filter(data => isResultSocketOperation(data)),
       map(data => this.parseResult(data as ResultSocketOperation)),
-      tap(ops => console.log('ops', ops))
+      tap(ops => Log.debug('ops', ops))
     );
 
     return combineLatest([this.sid$, hb$, operations$]).pipe(
@@ -159,10 +160,10 @@ export class FastcastConnection implements AsyncDisposable {
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
-    console.log('dispose');
+    Log.debug('dispose');
     this.destroy$.next(true);
     this.destroy$.unsubscribe();
-    this.ws$.complete();
+    this.ws$?.complete();
   }
 
   private parseResult(data: ResultSocketOperation): AnyDataOperation[] {
@@ -176,7 +177,7 @@ export class FastcastConnection implements AsyncDisposable {
 
       return payload.pl as unknown as AnyDataOperation[];
     } catch (e) {
-      console.error('inflate error', e);
+      Log.error('inflate error', e);
       return [];
     }
   }
@@ -195,7 +196,7 @@ export class FastcastConnection implements AsyncDisposable {
             break;
         }
       } catch (e) {
-        console.error('failed to apply operation', op, e);
+        Log.error('failed to apply operation', op, e);
       }
     }
   }

@@ -3,6 +3,7 @@ import { reverse, sortBy } from 'lodash-es';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CFB_API, MF_API } from '../config';
+import { Log } from '../log';
 import { User, createComment, getMarket, getUser } from '../manifold';
 import { ReadlinePrompter } from '../readline';
 import { Game, getGameSpread, getGames, getTeamMatchups } from '../stats';
@@ -10,7 +11,7 @@ import { CommandBase, formatDate, formatSpread, mdBoldIf } from './util';
 
 export class CommentCommand implements CommandBase {
   static register(program: Command): Command {
-    console.debug('CommentCommand register');
+    Log.debug('CommentCommand register');
     return program.command('comment').option('--game <id>').requiredOption('--week <number>');
   }
 
@@ -28,9 +29,9 @@ export class CommentCommand implements CommandBase {
       let mfUser: User;
       try {
         mfUser = await getUser(MF_API);
-        console.log(`MF User ID: ${mfUser.id}`);
+        Log.debug(`MF User ID: ${mfUser.id}`);
       } catch (e: unknown) {
-        console.error(`Could not get Manifold user details`, e);
+        Log.error(`Could not get Manifold user details`, e);
         return;
       }
 
@@ -39,7 +40,7 @@ export class CommentCommand implements CommandBase {
         games = await getGames(CFB_API, week);
         games = sortBy(games, g => g.start_date);
       } catch (e: unknown) {
-        console.error(`Could not get game schedule`, e);
+        Log.error(`Could not get game schedule`, e);
         return;
       }
 
@@ -48,7 +49,7 @@ export class CommentCommand implements CommandBase {
           await readFile(join(process.cwd(), 'matching-games.json'), { encoding: 'utf-8', flag: 'r' })
         );
       } catch (e) {
-        console.error('Failed to load or parse matching games', e);
+        Log.error('Failed to load or parse matching games', e);
         return;
       }
 
@@ -75,13 +76,13 @@ export class CommentCommand implements CommandBase {
         const matchingGameKey = matchingGameKeys.find(k => this.matchingGames[k]) || '';
         const [, marketId] = matchingGameKey.split('_', 2);
         if (!marketId) {
-          console.debug(`No matching market for game ${game.id} - skipping`);
+          Log.debug(`No matching market for game ${game.id} - skipping`);
           continue;
         }
 
         const market = await getMarket(MF_API, marketId);
         const [, marketSpreadTeam, marketSpreadPoints] =
-          market.textDescription.match(/ line: (.+?) (-?\d+(?:\.\d+)?)/i) || [];
+          market?.textDescription.match(/ line: (.+?) (-?\d+(?:\.\d+)?)/i) || [];
 
         let content: string[] = [];
 
@@ -188,10 +189,10 @@ export class CommentCommand implements CommandBase {
               try {
                 error = await response.json();
               } catch {}
-              console.error('Failed to create comment:', error?.message);
+              Log.error('Failed to create comment:', error?.message);
             }
           } catch (e) {
-            console.error('Failed to create comment:', e);
+            Log.error('Failed to create comment:', e);
           }
         } else if (confirmCreate === 'N') {
           console.log('Skipped creating comment');
@@ -201,7 +202,7 @@ export class CommentCommand implements CommandBase {
         }
       }
     } catch (e) {
-      console.error(e);
+      Log.error(e);
     }
   }
 

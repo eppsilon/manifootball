@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import * as cache from './cache';
+import { Log } from './log';
 
 export interface Config {
   apiUrl: string;
@@ -132,7 +133,7 @@ export async function searchMarkets(
   return results;
 }
 
-export async function getMarket({ apiUrl, apiKey, cachePath }: Config, marketId: string): Promise<Market> {
+export async function getMarket({ apiUrl, apiKey, cachePath }: Config, marketId: string): Promise<Market | undefined> {
   cachePath = join(cachePath, 'market');
   const url = new URL(`${apiUrl}/market/${marketId}`);
   const headResponse = await fetch(url, { method: 'head', headers: { authorization: `Key ${apiKey}` } });
@@ -189,7 +190,7 @@ export async function resolveMarket(
     headers: { authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({ outcome }),
   });
-  console.debug('resolveMarket()', response);
+  Log.debug('resolveMarket()', response);
   return response;
 }
 
@@ -202,6 +203,6 @@ export async function createComment(
     headers: { authorization: `Key ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({ contractId: marketId, markdown: content }),
   });
-  console.debug('createComment()', response);
+  Log.debug('createComment()', response);
   return response;
 }

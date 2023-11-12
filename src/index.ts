@@ -4,25 +4,29 @@ import { CommentCommand } from './commands/comment';
 import { LiveCommand } from './commands/live';
 import { ScoreboardCommand } from './commands/scoreboard';
 import { CommandBase, CommandConstructor } from './commands/util';
+import { Log } from './log';
 
-let command: CommandBase;
+let command: CommandBase | undefined;
 let commands: CommandConstructor[] = [AutocreateCommand, CommentCommand, ScoreboardCommand, LiveCommand];
 
 try {
   program.name('mf').description('Manifootball').version('1.0.0');
   commands.forEach(c => {
     c.register(program).action(options => {
-      console.debug('run command', c.name);
+      Log.debug('run command', c.name);
       command = new c();
       return command.run(options);
     });
   });
   await program.parseAsync();
 } catch (e) {
-  console.error(e);
+  Log.error(e);
   process.exit(1);
 } finally {
-  await command[Symbol.asyncDispose]();
+  if (command) {
+    await command[Symbol.asyncDispose]();
+  }
+
   process.exit(0);
 }
 

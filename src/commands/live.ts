@@ -3,12 +3,11 @@ import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { setTimeout } from 'timers/promises';
 import { FastcastConnection } from '../fastcast';
+import { Log, LogLevel } from '../log';
 
 export class LiveCommand implements AsyncDisposable {
-  fc: FastcastConnection;
-
   static register(program: Command): Command {
-    console.debug('LiveCommand register');
+    Log.debug('LiveCommand register');
     return program
       .command('live')
       .requiredOption('--game <game>')
@@ -19,9 +18,12 @@ export class LiveCommand implements AsyncDisposable {
       );
   }
 
+  private fc?: FastcastConnection;
+
   async run(options: OptionValues) {
-    console.log('game', options.game);
-    console.log('topic', options.topic);
+    Log.setLevel(LogLevel.Debug);
+    Log.debug('game', options.game);
+    Log.debug('topic', options.topic);
 
     let done = false;
 
@@ -31,27 +33,26 @@ export class LiveCommand implements AsyncDisposable {
     await this.fc.connect();
     this.fc.subscribe(options.game, options.topic).subscribe(([sid, mid, data]) => {
       this.recordSnapshot(sid, mid, data);
-      console.log('snap');
     });
 
     process.stdin.on('data', buf => {
       if (buf[0] === 0x03) {
         done = true;
-        console.log('exit');
+        Log.debug('exit');
       }
     });
 
     while (!done) {
-      console.log('waiting');
       await setTimeout(5000);
     }
 
-    console.log('done');
+    Log.debug('done');
   }
 
   async [Symbol.asyncDispose](): Promise<void> {
-    console.log('dispose');
-    this.fc[Symbol.asyncDispose]();
+    if (this.fc) {
+      this.fc[Symbol.asyncDispose]();
+    }
   }
 
   private async recordSnapshot(sid: string, mid: number, data: unknown) {

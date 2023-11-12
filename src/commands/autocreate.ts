@@ -6,12 +6,13 @@ import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CFB_API, MF_API } from '../config';
+import { Log } from '../log';
 import { Market, NewMarket, User, createMarket, editMarketGroup, getMarket, getUser, searchMarkets } from '../manifold';
 import { ReadlinePrompter } from '../readline';
 import { Game, Venue, getGameSpread, getGames, getPollRanks, getVenues } from '../stats';
 import { CommandBase, formatDate, formatTime } from './util';
 
-const MF_GROUPS = {
+const MF_GROUPS: Record<string, string> = {
   'sports-default': '2hGlgVhIyvVaFyQAREPi',
   football: 'Vcf6CYTTSXAiStbKSqQq',
   'college-football': 'ky1VPTuxrLXMnHyajZFp',
@@ -27,7 +28,7 @@ const MF_GROUPS = {
   'sun-belt-conference': 'a51e3e61-c09a-4d77-9513-cbd3d5c86625',
 };
 
-const CFB_CONFERENCES_TO_MF_GROUPS = {
+const CFB_CONFERENCES_TO_MF_GROUPS: Record<string, string> = {
   'American Athletic': 'aac',
   ACC: 'acc',
   'Big 12': 'big-12',
@@ -44,7 +45,7 @@ const MF_CLOSE_PADDING_MS = 4 * 60 * 60 * 1000;
 
 export class AutocreateCommand implements CommandBase {
   static register(program: Command): Command {
-    console.debug('AutocreateCommand register');
+    Log.debug('AutocreateCommand register');
     return program
       .command('autocreate')
       .option('--game <id>')
@@ -59,7 +60,7 @@ export class AutocreateCommand implements CommandBase {
     const gameId = options.game;
     const week = +options.week;
     const poll = options.poll as 'ap' | 'cfp';
-    console.debug({ gameId, week, poll });
+    Log.debug({ gameId, week, poll });
 
     this.rl.initialize();
 
@@ -67,9 +68,9 @@ export class AutocreateCommand implements CommandBase {
       let mfUser: User;
       try {
         mfUser = await getUser(MF_API);
-        console.log(`MF User ID: ${mfUser.id}`);
+        Log.debug(`MF User ID: ${mfUser.id}`);
       } catch (e: unknown) {
-        console.error(`Could not get Manifold user details`, e);
+        Log.error(`Could not get Manifold user details`, e);
         return;
       }
 
@@ -77,7 +78,7 @@ export class AutocreateCommand implements CommandBase {
       try {
         ranks = await getPollRanks(CFB_API, { week, poll });
       } catch (e: unknown) {
-        console.error(`Could not get poll ranking`, e);
+        Log.error(`Could not get poll ranking`, e);
         return;
       }
 
@@ -85,7 +86,7 @@ export class AutocreateCommand implements CommandBase {
       try {
         venues = await getVenues(CFB_API);
       } catch (e: unknown) {
-        console.error(`Could not get venues`, e);
+        Log.error(`Could not get venues`, e);
         return;
       }
 
@@ -94,7 +95,7 @@ export class AutocreateCommand implements CommandBase {
         games = await getGames(CFB_API, week);
         games = sortBy(games, g => g.start_date);
       } catch (e: unknown) {
-        console.error(`Could not get game schedule`, e);
+        Log.error(`Could not get game schedule`, e);
         return;
       }
 
@@ -103,7 +104,7 @@ export class AutocreateCommand implements CommandBase {
           await readFile(join(process.cwd(), 'matching-games.json'), { encoding: 'utf-8', flag: 'r' })
         );
       } catch (e) {
-        console.error('Failed to load or parse matching games', e);
+        Log.error('Failed to load or parse matching games', e);
         return;
       }
 
@@ -170,7 +171,7 @@ export class AutocreateCommand implements CommandBase {
           `${formattedStartDate}: ${awayTeam} (${game.away_pregame_elo}) @ ${homeTeam} (${game.home_pregame_elo})`
         );
 
-        let matchingMarkets: Market[] = [];
+        let matchingMarkets: (Market | undefined)[] = [];
         let alreadyMatched = false;
         const matchingGameKeys = Object.keys(this.matchingGames).filter(
           k => k.startsWith(`${game.id}_`) && this.matchingGames[k] != null
@@ -179,11 +180,12 @@ export class AutocreateCommand implements CommandBase {
         if (matchingGameKey) {
           const [, matchingGameMfId] = matchingGameKey.split('_', 2);
           try {
-            console.debug(`Game ${game.id} was already marked as existing, getting market ${matchingGameMfId}`);
-            matchingMarkets = [await getMarket(MF_API, matchingGameMfId)];
+            Log.debug(`Game ${game.id} was already marked as existing, getting market ${matchingGameMfId}`);
+            const matchingMarket = await getMarket(MF_API, matchingGameMfId);
+            matchingMarkets = matchingMarket ? [matchingMarket] : [];
             alreadyMatched = true;
           } catch (e: unknown) {
-            console.error(`Could not get matching market ${matchingGameMfId}`, e);
+            Log.error(`Could not get matching market ${matchingGameMfId}`, e);
           }
         } else {
           try {
@@ -194,7 +196,7 @@ export class AutocreateCommand implements CommandBase {
             });
             matchingMarkets = uniqBy(searchResults, r => r.id);
           } catch (e: unknown) {
-            console.error(`Could not search for matching market`, e);
+            Log.error(`Could not search for matching market`, e);
           }
         }
 
@@ -203,7 +205,7 @@ export class AutocreateCommand implements CommandBase {
         if (matchingMarkets.length > 0) {
           console.log('Found existing market(s):');
 
-          for (const [market, i] of matchingMarkets.map((m, i) => [m, i] as const)) {
+          for (const [market, i] of compact(matchingMarkets).map((m, i) => [m, i] as const)) {
             console.log(`${i + 1}. `, market.question);
           }
 
@@ -219,7 +221,7 @@ export class AutocreateCommand implements CommandBase {
             }
 
             for (let [market, i] of matchingMarkets.map((m, i) => [m, i] as const)) {
-              if (!Number.isNaN(selectedMatch) && selectedMatch === i + 1) {
+              if (market && !Number.isNaN(selectedMatch) && selectedMatch === i + 1) {
                 console.log('Market matches - will not create');
                 this.matchingGames[`${game.id}_${market.id}`] = true;
 
@@ -229,7 +231,7 @@ export class AutocreateCommand implements CommandBase {
 
                 matchingMarket = market;
                 canCreate = false;
-              } else {
+              } else if (market) {
                 this.matchingGames[`${game.id}_${market.id}`] = false;
               }
             }
@@ -254,7 +256,7 @@ export class AutocreateCommand implements CommandBase {
               try {
                 const response = await createMarket(MF_API, newMarket);
                 if (response.ok) {
-                  createdMarket = await response.json();
+                  createdMarket = (await response.json()) as Market;
                   createdMarket.textDescription = description; // desc comes back as object
                   this.matchingGames[`${game.id}_${createdMarket.id}`] = true;
                   console.log('Market created', createdMarket);
@@ -263,10 +265,10 @@ export class AutocreateCommand implements CommandBase {
                   try {
                     error = await response.json();
                   } catch {}
-                  console.error('Failed to create market:', error?.message);
+                  Log.error('Failed to create market:', error?.message);
                 }
               } catch (e) {
-                console.error('Failed to create market:', e);
+                Log.error('Failed to create market:', e);
               }
             } else if (confirmCreate === 'Q') {
               console.log('Quitting');
@@ -300,7 +302,7 @@ export class AutocreateCommand implements CommandBase {
                 const responseJson = await response.json();
                 console.log(`Group ${groupId} added to market ${market.id}`, responseJson);
               } catch (e) {
-                console.error(`Failed to add ${groupId} to market ${market.id}`, e);
+                Log.error(`Failed to add ${groupId} to market ${market.id}`, e);
               }
             }
           } else {
@@ -319,7 +321,7 @@ export class AutocreateCommand implements CommandBase {
                   const responseJson = await response.json();
                   console.log(`Group ${groupId} remove from market ${market.id}`, responseJson);
                 } catch (e) {
-                  console.error(`Failed to remove ${groupId} from market ${market.id}`, e);
+                  Log.error(`Failed to remove ${groupId} from market ${market.id}`, e);
                 }
               }
             } else if (confirmRemoveGroups === 'Q') {
@@ -341,7 +343,7 @@ export class AutocreateCommand implements CommandBase {
             const descriptionChanges = diffChars(market.textDescription, description);
 
             let markedUpDescription = '';
-            let change: Change;
+            let change: Change | undefined;
             while ((change = descriptionChanges.shift())) {
               if (change.added) {
                 markedUpDescription += chalk.green.underline(change.value);
@@ -362,7 +364,7 @@ export class AutocreateCommand implements CommandBase {
         }
       }
     } catch (e) {
-      console.error(e);
+      Log.error(e);
     }
   }
 

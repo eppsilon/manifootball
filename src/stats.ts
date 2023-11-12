@@ -207,7 +207,7 @@ export async function getGameSpread(
     cachePath: string;
   },
   gameId: number
-): Promise<string> {
+): Promise<string | undefined> {
   cachePath = join(cachePath, 'lines');
 
   const url = new URL(`${apiUrl}/lines`);
@@ -223,19 +223,19 @@ export async function getGameSpread(
   const response = await fetch(url, { method: 'get', headers: { authorization: `Bearer ${apiKey}` } });
   const result = (await response.json()) as BettingGame[];
   const lines = sortBy(first(result)?.lines || [], l => l.spread);
-  // console.debug('getGameSpread(): lines', lines);
+  // Log.debug('getGameSpread(): lines', lines);
 
   const spreads = lines.reduce((s, l) => ({ [l.spread]: (s[l.spread] || 0) + 1 }), {} as Record<string, number>);
-  // console.debug('getGameSpread(): spreads', spreads);
+  // Log.debug('getGameSpread(): spreads', spreads);
   const [majoritySpread] = Object.entries(spreads).find(([, c]) => c > lines.length / 2) || [];
-  // console.debug('getGameSpread(): majoritySpread', majoritySpread);
+  // Log.debug('getGameSpread(): majoritySpread', majoritySpread);
 
-  let data: string;
+  let data: string | undefined;
   if (majoritySpread) {
     data = majoritySpread;
   } else {
     const [mostCommonSpread] = last(sortBy(Object.entries(spreads), ([, c]) => c)) || [];
-    // console.debug('getGameSpread(): mostCommonSpread', mostCommonSpread);
+    // Log.debug('getGameSpread(): mostCommonSpread', mostCommonSpread);
     data = mostCommonSpread;
   }
 
