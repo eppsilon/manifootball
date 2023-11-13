@@ -1,16 +1,29 @@
+import { generateText } from '@tiptap/core';
+import { generateJSON } from '@tiptap/html';
 import chalk from 'chalk';
 import { Command, Option, OptionValues } from 'commander';
-import { intlFormat } from 'date-fns';
+import { intlFormat, setHours, setMinutes } from 'date-fns';
 import { Change, diffChars } from 'diff';
-import { compact, difference, first, sortBy, uniq, uniqBy } from 'lodash-es';
+import { compact, difference, first, isEqual, reverse, sortBy, uniq, uniqBy } from 'lodash-es';
+import { marked } from 'marked';
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CFB_API, MF_API } from '../config';
 import { Log } from '../log';
-import { Market, NewMarket, User, createMarket, editMarketGroup, getMarket, getUser, searchMarkets } from '../manifold';
+import {
+  Market,
+  NewMarket,
+  TIPTAP_EXTENSIONS,
+  User,
+  createMarket,
+  editMarketGroup,
+  getMarket,
+  getUser,
+  searchMarkets,
+} from '../manifold';
 import { ReadlinePrompter } from '../readline';
-import { Game, Venue, getGameSpread, getGames, getPollRanks, getVenues } from '../stats';
-import { CommandBase, formatDate, formatTime } from './util';
+import { Game, Venue, getGameSpread, getGames, getPollRanks, getTeamMatchups, getVenues } from '../stats';
+import { CommandBase, formatDate, formatTime, mdBoldIf } from './util';
 
 const MF_GROUPS: Record<string, string> = {
   'sports-default': '2hGlgVhIyvVaFyQAREPi',
@@ -139,37 +152,88 @@ export class AutocreateCommand implements CommandBase {
         }
 
         console.log('-'.repeat(80));
-        const startDate = new Date(game.start_date);
-
-        let formattedStartDate: string;
-        if (game.start_time_tbd || (startDate.getHours() === 23 && startDate.getMinutes() === 59)) {
-          formattedStartDate = `${game.start_date.substring(0, game.start_date.indexOf('T'))} at TBD`;
-        } else {
-          const startTimestamp = new Date(game.start_date).getTime();
-          const startDate = new Date(startTimestamp + etOffset);
-          formattedStartDate = `${formatDate(startDate)} at ${formatTime(startDate)}`;
-        }
 
         const awayRank = ranks[game.away_team];
         const homeRank = ranks[game.home_team];
         const awayTeam = awayRank ? `#${awayRank} ${game.away_team}` : game.away_team;
         const homeTeam = homeRank ? `#${homeRank} ${game.home_team}` : game.home_team;
 
-        let description = `${formattedStartDate}`;
+        let startDate = new Date(game.start_date);
 
-        const venue = venues[game.venue_id];
-        if (venue) {
-          description += ` in ${venue.city}, ${venue.state}`;
+        if (game.start_time_tbd || (startDate.getHours() === 23 && startDate.getMinutes() === 59)) {
+          console.log(`${awayTeam} (${game.away_pregame_elo}) @ ${homeTeam} (${game.home_pregame_elo})`);
+          const gameTime = await this.rl.answer('What time is this game?');
+          const [gameTimeHours, gameTimeMinutes] = gameTime.split(':', 2).map(n => (n != null ? +n : 0));
+          startDate = setHours(startDate, gameTimeHours);
+          startDate = setMinutes(startDate, gameTimeMinutes);
         }
 
-        const spread = await getGameSpread(CFB_API, game.id);
-        if (spread != null) {
-          description += `. Line: ${game.home_team} ${Number.isNaN(spread) || +spread < 0 ? '' : '+'}${+spread}.`;
-        }
+        const startTimestamp = new Date(startDate).getTime() + etOffset;
+        const formattedStartDate = `${formatDate(startTimestamp)} at ${formatTime(startTimestamp)}`;
 
         console.log(
           `${formattedStartDate}: ${awayTeam} (${game.away_pregame_elo}) @ ${homeTeam} (${game.home_pregame_elo})`
         );
+
+        let descriptionLines = [
+          formattedStartDate +
+            (venues[game.venue_id] ? ` in ${venues[game.venue_id].city}, ${venues[game.venue_id].state}.` : ''),
+        ];
+
+        const spread = await getGameSpread(CFB_API, game.id);
+        if (spread != null) {
+          descriptionLines.push(`Line: ${game.home_team} ${Number.isNaN(spread) || +spread < 0 ? '' : '+'}${+spread}.`);
+        }
+
+        const teamMatchups = await getTeamMatchups(CFB_API, {
+          team1: game.away_team,
+          team2: game.home_team,
+        });
+
+        if (teamMatchups.games.length > 0) {
+          descriptionLines.push(`Head-to-head:`);
+
+          const overall = [
+            mdBoldIf(
+              teamMatchups.team1Wins > teamMatchups.team2Wins,
+              `${teamMatchups.team1} ${teamMatchups.team1Wins}`
+            ),
+            mdBoldIf(
+              teamMatchups.team2Wins > teamMatchups.team1Wins,
+              `${teamMatchups.team2} ${teamMatchups.team2Wins}`
+            ),
+            `Tie ${teamMatchups.ties}`,
+          ];
+          descriptionLines.push(`Overall: ${overall.join(', ')}`);
+
+          const last5Rows = reverse(sortBy(teamMatchups.games, g => new Date(g.date))).slice(0, 5);
+          const last5Team1Wins = last5Rows.filter(g =>
+            g.awayTeam === teamMatchups.team1 ? g.awayScore > g.homeScore : g.homeScore > g.awayScore
+          ).length;
+          const last5Team2Wins = last5Rows.filter(g =>
+            g.awayTeam === teamMatchups.team2 ? g.awayScore > g.homeScore : g.homeScore > g.awayScore
+          ).length;
+          const last5Ties = last5Rows.filter(g => g.homeScore === g.awayScore).length;
+
+          if (
+            last5Team1Wins !== teamMatchups.team1Wins ||
+            last5Team2Wins !== teamMatchups.team2Wins ||
+            last5Ties !== teamMatchups.ties
+          ) {
+            const last5 = [
+              mdBoldIf(last5Team1Wins > last5Team2Wins, `${teamMatchups.team1} ${last5Team1Wins}`),
+              mdBoldIf(last5Team2Wins > last5Team1Wins, `${teamMatchups.team2} ${last5Team2Wins}`),
+              `Tie ${last5Ties}`,
+            ];
+
+            descriptionLines.push(`Last ${Math.min(teamMatchups.games.length, 5)}: ${last5.join(', ')}`);
+          }
+        }
+
+        const descriptionMarkdown = descriptionLines.join('\n\n');
+        const descriptionHtml = marked.parse(descriptionMarkdown);
+        const descriptionContent = generateJSON(descriptionHtml, TIPTAP_EXTENSIONS);
+        const descriptionText = generateText(descriptionContent, TIPTAP_EXTENSIONS);
 
         let matchingMarkets: (Market | undefined)[] = [];
         let alreadyMatched = false;
@@ -245,7 +309,7 @@ export class AutocreateCommand implements CommandBase {
             const newMarket: NewMarket = {
               question: `🏈 2023 NCAAF: Will ${awayTeam} beat ${homeTeam}?`,
               outcomeType: 'BINARY',
-              description,
+              descriptionMarkdown: descriptionMarkdown,
               closeTime: startDate.getTime() + MF_CLOSE_PADDING_MS,
               initialProb: 50,
               groupId: MF_GROUPS['college-football'],
@@ -257,7 +321,7 @@ export class AutocreateCommand implements CommandBase {
                 const response = await createMarket(MF_API, newMarket);
                 if (response.ok) {
                   createdMarket = (await response.json()) as Market;
-                  createdMarket.textDescription = description; // desc comes back as object
+                  createdMarket.textDescription = descriptionText; // desc comes back as object
                   this.matchingGames[`${game.id}_${createdMarket.id}`] = true;
                   console.log('Market created', createdMarket);
                 } else {
@@ -333,14 +397,15 @@ export class AutocreateCommand implements CommandBase {
 
           const closeTimeMs = startDate.getTime() + MF_CLOSE_PADDING_MS;
           if (market.closeTime !== closeTimeMs) {
+            Log.debug('market close time', market.closeTime, 'correct close time', closeTimeMs);
             const closeTime = new Date(closeTimeMs);
-            if ((await this.rl.confirm(`Update close time to ${formatTime(closeTime)}`)) === 'Q') {
+            if ((await this.rl.confirm(`Update close time to ${formatTime(closeTime, 'MT')}`)) === 'Q') {
               break;
             }
           }
 
-          if (market.textDescription !== description) {
-            const descriptionChanges = diffChars(market.textDescription, description);
+          if (!isEqual(market.textDescription, descriptionText)) {
+            const descriptionChanges = diffChars(market.textDescription, descriptionText);
 
             let markedUpDescription = '';
             let change: Change | undefined;
@@ -354,8 +419,8 @@ export class AutocreateCommand implements CommandBase {
               }
             }
 
-            console.log('New: ' + description);
-            console.log('Changes: ' + markedUpDescription);
+            console.log('New:', descriptionText);
+            console.log('Changes:', markedUpDescription);
 
             if ((await this.rl.confirm(`Update description`)) === 'Q') {
               break;

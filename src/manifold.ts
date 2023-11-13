@@ -1,6 +1,18 @@
+import { Image } from '@tiptap/extension-image';
+import { Link } from '@tiptap/extension-link';
+import { Mention } from '@tiptap/extension-mention';
+import StarterKit from '@tiptap/starter-kit';
 import { join } from 'node:path';
 import * as cache from './cache';
 import { Log } from './log';
+
+export const TIPTAP_EXTENSIONS = [
+  StarterKit,
+  Link,
+  Image.extend({ renderText: () => '[image]' }),
+  Mention, // user @mention
+  Mention.extend({ name: 'contract-mention' }), // market %mention
+];
 
 export interface Config {
   apiUrl: string;

@@ -40,6 +40,15 @@ export class ReadlinePrompter implements AsyncDisposable {
     return response as number | 'N' | 'Q';
   }
 
+  async answer(prompt: string): Promise<string> {
+    if (!this.rl) {
+      throw new Error('must initialize before prompting');
+    }
+
+    let response: string = await this.rl.question(`${prompt} `);
+    return response;
+  }
+
   async [Symbol.asyncDispose](): Promise<void> {
     // Must fully clean up readline or other programs in the same shell will not work correctly.
     this.rl?.close();
